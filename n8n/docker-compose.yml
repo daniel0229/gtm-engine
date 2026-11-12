@@ -1,0 +1,20 @@
+# Local n8n for the GTM Engine workflows.
+# Start:  docker compose -f n8n/docker-compose.yml up -d
+# Open:   http://localhost:5678
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.47.5
+    container_name: gtm-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=Europe/Warsaw
+      - TZ=Europe/Warsaw
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_RUNNERS_ENABLED=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
