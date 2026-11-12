@@ -1,0 +1,476 @@
+# ICP config for the GTM Engine demo scenario.
+# The whole system reads this file; changing the scenario = changing this file.
+# docs/icp-odsylka.xlsx is generated from it (icp skill, export_xlsx.py). Edit here, not in Excel.
+version: 1
+
+company:
+  name: "Odsyłka"
+  slug: odsylka
+  fictional: true
+  note: "Odsyłka is a fictional company used as a demo scenario. Market data and sources are real; nothing is ever sent on its behalf."
+  product:
+    name: "Odsyłka"
+    one_liner: "Returns management SaaS for mid-sized Polish online stores: from the customer's return request to the refund, in one place."
+    problem: "Returns run through email, spreadsheets, the courier panel, the store admin and online banking, so refunds are late, the team copies data by hand, and nobody knows which products come back and why."
+    integrations: [woocommerce, prestashop, shopify, idosell, shoper, baselinker]
+
+data_sources:
+  - id: website
+    description: "Store's own website: home, about, contact, footer, terms (regulamin), product listings, page code"
+  - id: vat_whitelist
+    description: "Polish VAT whitelist API (wl-api.mf.gov.pl), no key: name, address, REGON, KRS, VAT status"
+  - id: krs
+    description: "Polish KRS API (api-krs.ms.gov.pl), no key: legal form, registration date, management board"
+  - id: meta_ad_library
+    description: "Meta Ad Library, public: active ads of the store's page"
+
+segment:
+  name: "Mid-sized Polish online stores with high-return categories"
+  definition: >
+    Polish B2C online stores selling physical goods on their own domain, big enough that returns
+    are a daily process (a few hundred returns a month or more) but too small for an in-house
+    returns system: typically 1,000 to 30,000 products, a small e-commerce team and one or two
+    people handling customer service. Strongest fit: fashion, footwear and accessories, where
+    customers order several sizes and send most of them back.
+  firmographics:
+    - "Country: Poland, selling to consumers (B2C), own domain"
+    - "Assortment: about 1,000 to 30,000 products (counted on the website)"
+    - "Legal form: registered company in KRS (sp. z o.o., sp.k., S.A.), not a sole trader"
+    - "Team (assumption, not measured): about 10 to 100 people, e-commerce team of 2 to 6"
+    - "Platform: WooCommerce, PrestaShop, Shopify, IdoSell, Shoper or Magento"
+  why_now:
+    - text: "EU Directive 2023/2673 requires an online 'withdraw from contract here' function, applied from 19 June 2026."
+      evidence: eu_directive
+    - text: "Poland has not finished transposing it; the government withdrew its draft, so stores face uncertainty about what exactly to build."
+      evidence: pl_transposition
+    - text: "Only about 27% of small and mid-sized stores have an automatic return form on the website, against 89% of large stores."
+      evidence: merce_returns
+
+target:
+  geography: [PL]
+  business_type:
+    value: "B2C online store selling physical goods on its own domain"
+    source: website
+  size:
+    description: "Mid-sized = about 1,000 to 30,000 products in the store catalogue, counted on the website"
+    rules:
+      - id: assortment_size
+        description: "1,000 to 30,000 products = full points; 500 to 999 or 30,001 to 60,000 = half points"
+        source: website
+  categories:
+    include: [fashion, footwear, accessories, sportswear, home_decor, kids]
+    exclude: [food, digital_goods, services]
+
+signals:
+  - id: meta_ads_active
+    description: "Store runs active ads in Meta Ad Library"
+    why: "Paid acquisition means a growing order volume, so a growing return volume, and a budget for tools"
+    source: meta_ad_library
+    type: boolean
+  - id: platform
+    description: "Store platform detected in page code"
+    why: "Tells which integration to offer and how hard the sale is (some platforms ship a free returns module)"
+    source: website
+    type: category
+    values:
+      woocommerce: 1.0
+      prestashop: 1.0
+      shopify: 0.8      # many returns apps already compete in the Shopify App Store
+      idosell: 0.8
+      magento: 0.7      # often custom-built, longer integration
+      shoper: 0.5       # Shoper ships a free built-in returns module (Shoper Zwroty)
+      custom: 0.3
+      unknown: 0.0
+  - id: category_fit
+    description: "Main product category of the store"
+    why: "Return volume depends on category: clothing and shoes are ordered in several sizes and sent back"
+    source: website
+    type: category
+    values:
+      fashion: 1.0
+      footwear: 1.0
+      accessories: 0.8
+      sportswear: 0.8
+      kids: 0.7
+      home_decor: 0.6
+      electronics: 0.5
+      beauty: 0.3
+      other: 0.2
+  - id: registered_company
+    description: "Seller is a company registered in KRS (not a sole trader)"
+    why: "A KRS company usually has a team, a budget owner and a buying process; a sole trader rarely buys SaaS for returns"
+    source: krs
+    type: boolean
+
+decision_makers:
+  - role: "Head of E-commerce / E-commerce Manager"
+    why: "Owns online revenue and the store platform; feels returns in conversion, reviews and margin; picks the tool and builds the case"
+  - role: "Owner / CEO"
+    why: "Signs off the budget in a mid-sized store; cares about margin, cash flow and legal risk"
+
+disqualifiers:
+  - id: marketplace_only
+    description: "Sells only on marketplaces (Allegro, Amazon, Zalando), no store on its own domain"
+    source: website
+  - id: b2b_only
+    description: "Sells only to businesses, so the consumer right of withdrawal does not apply"
+    source: website
+  - id: excluded_category
+    description: "Sells mainly food, perishable goods, digital goods or services, where the 14-day return right is limited or does not apply"
+    source: website
+  - id: vat_inactive
+    description: "Seller's VAT status is not active (not registered, removed or restored but suspended) in the VAT whitelist"
+    source: vat_whitelist
+  - id: no_seller_id
+    description: "No NIP on the website (terms or footer), so the store cannot be matched to a company"
+    source: website
+
+out_of_scope:
+  - id: enterprise
+    description: "Large retailers and chains (more than about 60,000 products or listed companies)"
+    reason: "Usually have their own returns system or ERP integration and a long buying process; not a fit for a self-serve SaaS at this stage"
+  - id: small_stores
+    description: "Stores with fewer than about 500 products"
+    reason: "Too few returns to pay for a tool; free platform modules or email are enough for them"
+  - id: dropshipping
+    description: "Dropshipping stores where the supplier handles returns"
+    reason: "The store does not run the returns process itself"
+  - id: outside_poland
+    description: "Stores based outside Poland"
+    reason: "Product, legal content and support are Polish-only in the first version"
+
+scoring:
+  max: 100
+  components:
+    - ref: meta_ads_active
+      weight: 25
+    - ref: platform
+      weight: 20
+    - ref: category_fit
+      weight: 25
+    - ref: assortment_size
+      weight: 20
+    - ref: registered_company
+      weight: 10
+  thresholds:
+    high: 70
+    low: 40
+
+offer:
+  note: "Fictional offer, written for the demo scenario."
+  modules:
+    - name: "Returns portal with withdrawal button"
+      description: "Branded page on the store's domain: the customer finds the order, picks items and reasons, gets a confirmation e-mail. Covers the 'withdraw from contract here' function."
+    - name: "Shipping labels"
+      description: "Return label or parcel locker code generated in the portal; the store sees tracking without logging in to the courier panel."
+    - name: "Inspection at the warehouse"
+      description: "Checklist on a phone or scanner: item received, condition, photo. Decides refund, partial refund or rejection."
+    - name: "Refund automation"
+      description: "Refund triggered through the payment gateway after inspection (or on proof of shipment), with the 14-day legal deadline tracked per return."
+    - name: "Correction invoices"
+      description: "Data for correction invoices exported to the invoicing tool, so accounting does not retype returns."
+    - name: "Return reasons analytics"
+      description: "Return rate and reasons per product, size and category, so the e-commerce team can fix product pages and size charts."
+    - name: "Customer status updates"
+      description: "Automatic e-mails at each step (request received, parcel arrived, refund sent), so customers stop asking 'where is my money'."
+  pricing:
+    - plan: "Start"
+      price: "299 PLN / month"
+      includes: "up to 300 returns a month, 1 store, all modules"
+    - plan: "Growth"
+      price: "699 PLN / month"
+      includes: "up to 1,500 returns a month, 3 stores, analytics export, priority support"
+    - plan: "Scale"
+      price: "individual"
+      includes: "above 1,500 returns a month, API, onboarding call"
+  terms:
+    - "14-day free trial, no card"
+    - "Monthly plan, cancel any time, no annual contract"
+    - "Setup in one working day with a ready plugin for the store platform"
+
+value_proposition:
+  statement: >
+    For mid-sized Polish online stores that lose time and customers on returns, Odsyłka is a returns
+    management tool that takes a return from the customer's request to the refund in one place.
+    Unlike email, spreadsheets and free platform modules, it tracks the legal deadline, pays the
+    refund after inspection and shows which products come back and why.
+  headline: "From return request to refund, in one place."
+  alternatives:
+    - name: "Email + spreadsheet + courier panel + online banking"
+      weakness: "Manual copying, no deadline tracking, no data on return reasons"
+    - name: "Free platform modules (e.g. Shoper Zwroty, Furgonetka Zwroty)"
+      weakness: "Tied to one platform; cover the request form, not inspection, refunds and analytics"
+      evidence: shoper_returns
+    - name: "Returns apps (e.g. RetJet)"
+      weakness: "Direct competitors; Odsyłka competes on refund automation and Polish accounting (correction invoices)"
+      evidence: retjet
+
+personas:
+  - id: head_of_ecommerce
+    primary: true
+    validation: hypothesis
+    name: "Tomasz"
+    title: "Head of E-commerce"
+    buying_role: champion
+    company_context: "Fashion store on WooCommerce, about 5,000 products, team of about 30, a few hundred returns a month (assumed example)"
+    reports_to: "Owner / CEO"
+    team: "2 to 6 people: performance marketing, content, sometimes customer service"
+    role_summary: "Owns online revenue: traffic, conversion, the store platform and the customer experience after purchase. Works with an ads agency and a freelance developer."
+    responsibilities:
+      - "Online revenue and conversion rate"
+      - "Ad budget and return on ad spend, together with the agency"
+      - "Store platform, plugins and integrations"
+      - "Customer experience after purchase: delivery, returns, reviews"
+      - "Monthly report to the owner"
+    day_in_the_life:
+      - time: "08:30"
+        activity: "Checks yesterday's sales, ad spend and conversion in GA4 and the store admin"
+      - time: "09:30"
+        activity: "Short stand-up with marketing and customer service; hears about refund complaints"
+      - time: "10:30"
+        activity: "Call with the ads agency: budgets, new campaign, best sellers"
+      - time: "12:00"
+        activity: "Fixes product pages: sizes, photos, descriptions; guesses which ones cause returns"
+      - time: "14:00"
+        activity: "Handles escalations: a customer waiting 3 weeks for a refund posts a 1-star review"
+      - time: "15:30"
+        activity: "Works with the developer on a plugin update or a checkout bug"
+      - time: "16:30"
+        activity: "Prepares numbers for the owner; net revenue after returns needs a manual spreadsheet"
+    pains:
+      - pain: "Returns live in five places (email, spreadsheet, courier panel, store admin, bank)"
+        consequence: "No single status per return; the team copies data by hand and makes mistakes"
+      - pain: "Does not know which products come back and why"
+        consequence: "Ad budget keeps pushing products that are later returned; margin leaks"
+      - pain: "Late refunds"
+        consequence: "Angry customers, bad reviews, risk of complaints to UOKiK"
+      - pain: "Peaks after Christmas and sales"
+        consequence: "Customer service is buried for weeks; temporary staff or overtime"
+      - pain: "Unclear new EU withdrawal-button rules"
+        consequence: "Has to decide what to build without a final Polish law"
+    success_metrics:
+      - kpi: "Net revenue after returns"
+        how_measured: "Monthly, store admin + spreadsheet"
+      - kpi: "Conversion rate"
+        how_measured: "GA4, weekly"
+      - kpi: "Return rate per product and category"
+        how_measured: "Today: rough estimate; wants it per product"
+      - kpi: "Return on ad spend on net revenue"
+        how_measured: "Ads panel + returns data, monthly"
+      - kpi: "Store rating and review score"
+        how_measured: "Review platforms, weekly"
+    decision_authority:
+      decides: false
+      summary: "Chooses and recommends the tool; can start a free trial alone. Pays small monthly tools on the company card up to an agreed limit; anything above, or a contract, needs the owner's approval."
+      approval_from: "Owner / CEO"
+      others_involved: "Developer (integration), customer service lead (daily use), accountant (correction invoices)"
+    objections:
+      - "We already have a returns form on the platform"
+      - "Another plugin will slow the store down"
+      - "No time for implementation before the next sale"
+    buying_triggers:
+      - "Spike in returns after Christmas or a big sale"
+      - "Bad reviews about refunds"
+      - "New EU withdrawal rules"
+      - "Platform migration or redesign"
+    where_to_reach: "LinkedIn, e-commerce events and newsletters, platform partner communities"
+    message_angle: "Show which products come back and why, and pay refunds on time without extra hires."
+
+  - id: returns_lead
+    primary: false
+    validation: hypothesis
+    name: "Ola"
+    title: "Customer Service & Returns Lead"
+    buying_role: user
+    company_context: "Same store; leads 1 to 3 people in customer service, sometimes also packs returns in the warehouse"
+    reports_to: "Head of E-commerce or Operations Manager"
+    team: "1 to 3 customer service agents, plus warehouse staff in peaks"
+    role_summary: "Runs the returns process every day: answers customers, checks returned parcels, orders refunds and passes data to accounting."
+    responsibilities:
+      - "Customer e-mails, chat and phone"
+      - "Registering and checking returns"
+      - "Ordering refunds in the bank or payment gateway"
+      - "Passing data for correction invoices"
+    day_in_the_life:
+      - time: "08:00"
+        activity: "Opens the inbox: return requests, 'where is my refund' questions, complaints"
+      - time: "09:00"
+        activity: "Copies new returns from e-mails to the spreadsheet; checks order numbers in the store admin"
+      - time: "11:00"
+        activity: "Goes to the warehouse: opens returned parcels, checks items and condition"
+      - time: "13:00"
+        activity: "Orders refunds one by one in the payment gateway or online banking"
+      - time: "14:30"
+        activity: "Sends the list of returns to the accountant for correction invoices"
+      - time: "15:30"
+        activity: "Answers customers again; chases parcels without tracking"
+    pains:
+      - pain: "Copies the same data between e-mail, spreadsheet, store admin and bank"
+        consequence: "Hours a day of manual work; typos in amounts and account numbers"
+      - pain: "Customers keep asking about refund status"
+        consequence: "Inbox grows; no time for real customer problems"
+      - pain: "Parcels arrive without information which order they belong to"
+        consequence: "Detective work before every refund"
+      - pain: "Has to watch the 14-day refund deadline by hand"
+        consequence: "Missed deadlines and stress in peaks"
+    success_metrics:
+      - kpi: "Days from parcel received to refund sent"
+        how_measured: "Spreadsheet dates, rarely checked"
+      - kpi: "Open returns backlog"
+        how_measured: "Count of rows in the spreadsheet"
+      - kpi: "First response time to customers"
+        how_measured: "Helpdesk or inbox"
+      - kpi: "Refund errors"
+        how_measured: "Complaints and corrections"
+    decision_authority:
+      decides: false
+      summary: "No budget. Daily user with a strong voice: if the tool is hard to use, the champion drops it."
+      approval_from: "Head of E-commerce"
+      others_involved: "Warehouse staff, accountant"
+    objections:
+      - "Learning a new tool in the middle of a peak"
+      - "Will it fit how our warehouse works?"
+    buying_triggers:
+      - "Backlog after Christmas"
+      - "A new person to train on returns"
+    where_to_reach: "Through the Head of E-commerce; customer service groups and webinars"
+    message_angle: "No more copying between five tools; customers see the refund status themselves."
+
+  - id: owner_ceo
+    primary: false
+    validation: hypothesis
+    name: "Piotr"
+    title: "Owner / CEO"
+    buying_role: approver
+    company_context: "Same store; founder or co-owner, often still involved in buying and finance"
+    reports_to: "Nobody (shareholders or partners)"
+    team: "Whole company; direct reports: e-commerce, operations, finance (often an external accounting firm)"
+    role_summary: "Owns profit, cash and risk. Approves every new monthly cost above a small limit and every contract."
+    responsibilities:
+      - "Profit and cash flow"
+      - "Budget approval"
+      - "Hiring"
+      - "Legal compliance and risk"
+    day_in_the_life:
+      - time: "08:00"
+        activity: "Reviews bank balance and yesterday's sales"
+      - time: "10:00"
+        activity: "Meetings with suppliers and buying for next season"
+      - time: "13:00"
+        activity: "Approves invoices and costs"
+      - time: "15:00"
+        activity: "Weekly review with the Head of E-commerce: revenue, ads, problems"
+      - time: "17:00"
+        activity: "Talks to the accountant about margins, VAT and cash"
+    pains:
+      - pain: "Returns eat margin (shipping both ways, handling, damaged items)"
+        consequence: "Revenue grows, profit does not"
+      - pain: "Customer service costs grow with every peak"
+        consequence: "Pressure to hire more people"
+      - pain: "Legal risk around returns and the new EU rules"
+        consequence: "Possible UOKiK complaints and fines"
+      - pain: "Cash tied up in returned goods not yet back on the shelf"
+        consequence: "Weaker cash flow in the slow months"
+    success_metrics:
+      - kpi: "Net margin"
+        how_measured: "Monthly from the accountant"
+      - kpi: "Cash flow"
+        how_measured: "Bank, weekly"
+      - kpi: "Cost of team per order"
+        how_measured: "Rough estimate"
+      - kpi: "Legal incidents"
+        how_measured: "Complaints, UOKiK letters"
+    decision_authority:
+      decides: true
+      summary: "Final yes or no on budget. Wants a short payback, a monthly plan without a long contract and low implementation risk."
+      approval_from: "Nobody"
+      others_involved: "Head of E-commerce (recommendation), accountant (cost check)"
+    objections:
+      - "Another subscription"
+      - "Can we not do it with what we have?"
+    buying_triggers:
+      - "A hire request for customer service"
+      - "A margin drop on the monthly report"
+      - "News about EU withdrawal rules"
+    where_to_reach: "Through the Head of E-commerce; industry media and events"
+    message_angle: "Fewer manual hours on returns instead of another hire, and one less legal risk."
+
+how_we_help:
+  - persona: head_of_ecommerce
+    pain: "Does not know which products come back and why"
+    capability: "Return reasons analytics"
+    outcome: "Fix product pages and size charts; stop paying for ads on products that come back"
+  - persona: head_of_ecommerce
+    pain: "Late refunds"
+    capability: "Refund automation with deadline tracking"
+    outcome: "Refunds inside the legal deadline; fewer bad reviews"
+  - persona: head_of_ecommerce
+    pain: "Unclear new EU withdrawal-button rules"
+    capability: "Returns portal with withdrawal button"
+    outcome: "Withdrawal function on the store's domain without custom development"
+  - persona: returns_lead
+    pain: "Copies the same data between e-mail, spreadsheet, store admin and bank"
+    capability: "One returns panel with order data, label, inspection and refund"
+    outcome: "One place per return instead of five tools"
+  - persona: returns_lead
+    pain: "Customers keep asking about refund status"
+    capability: "Customer status updates"
+    outcome: "Fewer 'where is my money' messages"
+  - persona: returns_lead
+    pain: "Parcels arrive without information which order they belong to"
+    capability: "Shipping labels tied to the return request"
+    outcome: "Every parcel matched to an order on arrival"
+  - persona: owner_ceo
+    pain: "Customer service costs grow with every peak"
+    capability: "Automation of registration, labels and refunds"
+    outcome: "Peaks handled by the same team"
+  - persona: owner_ceo
+    pain: "Legal risk around returns and the new EU rules"
+    capability: "Deadline tracking + withdrawal function + confirmation e-mails"
+    outcome: "A record of every return and deadline in case of a dispute"
+
+messaging:
+  pains:
+    - "Returns spread across e-mail, spreadsheets, courier panel and bank"
+    - "Late refunds and bad reviews"
+    - "No data on why products come back"
+  value_points:
+    - "One place from return request to refund"
+    - "Refunds on time, tracked against the 14-day deadline"
+    - "Return reasons per product"
+
+evidence:
+  - id: eu_directive
+    claim: "Directive (EU) 2023/2673 adds an online withdrawal function; Member States apply it from 19 June 2026"
+    url: "https://eur-lex.europa.eu/legal-content/PL/TXT/PDF/?uri=OJ%3AL_202302673"
+    checked: "2026-11-12"
+  - id: pl_transposition
+    claim: "Poland has not finished transposing the directive; the government withdrew its draft law"
+    url: "https://www.prawo.pl/biznes/zwrot-jednym-kliknieciem-kto-i-kiedy-musi-wdrozyc,1546214.html"
+    checked: "2026-11-12"
+    note: "Status can change; check Sejm / Dziennik Ustaw before citing in outbound"
+  - id: merce_returns
+    claim: "About 27% of small and mid-sized stores (under 6,000 products, N=1,100) have an automatic return form; 89% of large stores (N=200)"
+    url: "https://share.merce.com/files/LDxvMCpaa.pdf"
+    checked: "2026-11-12"
+    note: "Survey date and method not confirmed; read the full PDF before quoting"
+  - id: gemius_lockers
+    claim: "In Gemius 'E-commerce w Polsce 2025', 40% of respondents return online purchases through parcel lockers"
+    url: "https://antyweb.pl/e-commerce-w-polsce-2025-gemius"
+    checked: "2026-11-12"
+  - id: shoper_returns
+    claim: "Shoper offers a free built-in returns module (Shoper Zwroty)"
+    url: "https://www.shoper.pl/shoper-zwroty"
+    checked: "2026-11-12"
+  - id: retjet
+    claim: "RetJet is a Polish returns, exchanges and complaints app with a free plan (25 requests a month) and integrations with WooCommerce, PrestaShop, Shoper, BaseLinker"
+    url: "https://apps.shopify.com/retjet-easy-rma-manager"
+    checked: "2026-11-12"
+  - id: consumer_rights_act
+    claim: "Polish Consumer Rights Act: 14 days to withdraw from a distance contract; the seller refunds within 14 days of the withdrawal and may wait for the goods or proof of shipment"
+    url: "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20140000827"
+    checked: "2026-11-12"
+
+changelog:
+  - date: "2026-11-12"
+    change: "Initial version: Odsyłka (fictional returns SaaS), segment, scoring, 3 personas (buying committee), offer, value proposition, sources"

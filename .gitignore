@@ -1,0 +1,11 @@
+# Private working notes (Polish), not part of the public portfolio
+PLAN.md
+
+# OS / editor
+.DS_Store
+
+# Secrets and local data
+.env
+.env.*
+*.local
+data/
