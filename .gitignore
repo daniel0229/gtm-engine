@@ -9,3 +9,7 @@ PLAN.md
 .env.*
 *.local
 data/
+
+# Python
+.venv/
+__pycache__/

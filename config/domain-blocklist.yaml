@@ -1,0 +1,124 @@
+# Domains dropped when collecting stores from Google results (src/collect_serp.py).
+# They are not mid-sized stores on their own domain, so they could never fit the ICP.
+# A domain matches its subdomains too (allegro.pl also drops lokalnie.allegro.pl).
+version: 1
+
+marketplaces:
+  - allegro.pl
+  - amazon.pl
+  - amazon.com
+  - amazon.de
+  - aliexpress.com
+  - temu.com
+  - shein.com
+  - olx.pl
+  - vinted.pl
+  - ebay.pl
+  - ebay.com
+  - etsy.com
+  - zalando.pl
+  - zalando-lounge.pl
+  - ceneo.pl
+  - skapiec.pl
+  - empik.com
+  - erli.pl
+  - kaufland.pl
+  - allani.pl
+  - showroom.pl
+  - rozetka.pl
+  - domodi.pl
+  - biano.com
+  - okazje.info.pl
+
+# National and international chains, far above the ICP size (30,000+ products or hundreds of shops).
+large_chains:
+  - hm.com
+  - zara.com
+  - mango.com
+  - reserved.com
+  - cropp.com
+  - housebrand.com
+  - mohito.com
+  - sinsay.com
+  - ccc.eu
+  - eobuwie.pl
+  - modivo.pl
+  - answear.com
+  - born2be.pl
+  - renee.pl
+  - deichmann.com
+  - decathlon.pl
+  - 4f.com.pl
+  - sizeer.com
+  - worldbox.pl
+  - martes-sport.pl
+  - intersport.pl
+  - nike.com
+  - adidas.pl
+  - pepco.pl
+  - primark.com
+  - tkmaxx.pl
+  - smyk.com
+  - 5-10-15.pl
+  - ikea.com
+  - jysk.pl
+  - leroymerlin.pl
+  - castorama.pl
+  - obi.pl
+  - agatameble.pl
+  - homeandyou.com.pl
+  - pepper.pl
+  - douglas.pl
+  - notino.pl
+  - rossmann.pl
+  - lidl.pl
+  - biedronka.pl
+  - aboutyou.pl
+  - bonprix.pl
+  - only.com
+  - vero-moda.com
+  - zalando.com
+  - eobuwie.com.pl
+  - c-and-a.com
+  - underarmour.pl
+  - calzedonia.com
+  - cos.com
+  - puma.com
+  - pullandbear.com
+  - parfois.com
+  - tous.com
+  - okaidi.com
+
+# Not stores: media, social networks, search, reference.
+not_stores:
+  - google.com
+  - google.pl
+  - youtube.com
+  - facebook.com
+  - instagram.com
+  - pinterest.com
+  - pl.pinterest.com
+  - tiktok.com
+  - reddit.com
+  - wikipedia.org
+  - onet.pl
+  - wp.pl
+  - interia.pl
+  - o2.pl
+  - gazeta.pl
+  - elle.pl
+  - glamour.pl
+  - vogue.pl
+  - ofeminin.pl
+  - kobieta.pl
+  - party.pl
+  - papilot.pl
+  - twojstyl.pl
+  - rankingpro.pl
+  - forsal.pl
+  - trustmate.io
+  - panoramafirm.pl
+  - puszysci.org.pl
+  - shopify.com
+  - shoper.pl
+  - idosell.com

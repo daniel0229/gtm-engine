@@ -1,0 +1,170 @@
+# Google queries used to find Polish online stores (source 3 in docs/sources.md).
+# Each query is sent once to the DataForSEO SERP API (Google, Poland, Polish, desktop, top 20).
+# Categories match target.categories.include in icp.yaml. Product queries ("sukienki na wesele")
+# return store pages more often than generic ones ("sklep z odzieżą"), which return rankings and marketplaces.
+# Weighted towards fashion, footwear and accessories, the strongest fit in icp.yaml (segment.definition).
+version: 1
+search:
+  engine: google
+  location_code: 2616   # Poland
+  language_code: pl
+  device: desktop
+  depth: 20
+
+queries:
+  fashion:   # 40
+    - sklep internetowy z odzieżą damską
+    - sklep internetowy z odzieżą męską
+    - sukienki na wesele sklep
+    - sukienki letnie damskie
+    - sukienki wieczorowe online
+    - sukienki koktajlowe
+    - sukienki maxi
+    - bluzki damskie sklep internetowy
+    - koszule damskie eleganckie
+    - spodnie damskie eleganckie
+    - spodnie z szerokimi nogawkami damskie
+    - garnitury męskie sklep internetowy
+    - koszule męskie taliowane
+    - spodnie chino męskie
+    - swetry damskie oversize
+    - swetry męskie wełniane
+    - kardigany damskie
+    - płaszcze damskie wełniane
+    - płaszcze męskie
+    - kurtki zimowe damskie
+    - kurtki męskie przejściowe
+    - trencze damskie
+    - jeansy damskie wysoki stan
+    - jeansy męskie
+    - bielizna damska sklep internetowy
+    - biustonosze duże rozmiary
+    - piżamy damskie bawełniane
+    - odzież damska duże rozmiary
+    - polska marka odzieżowa sklep
+    - kombinezony damskie eleganckie
+    - marynarki damskie
+    - spódnice midi
+    - odzież lniana damska
+    - t-shirty z nadrukiem sklep
+    - stroje kąpielowe damskie
+    - komplety dresowe damskie
+    - odzież ciążowa
+    - odzież streetwear sklep
+    - bluzy z kapturem damskie
+    - kamizelki pikowane damskie
+  footwear:   # 35
+    - sklep internetowy z obuwiem
+    - buty damskie skórzane
+    - buty męskie skórzane polska produkcja
+    - botki damskie na obcasie
+    - botki damskie płaskie
+    - kozaki damskie skórzane
+    - oficerki damskie
+    - sneakersy damskie
+    - sneakersy męskie
+    - szpilki damskie
+    - czółenka damskie
+    - sandały damskie skórzane
+    - sandały męskie
+    - mokasyny męskie
+    - mokasyny damskie
+    - półbuty męskie eleganckie
+    - buty ślubne damskie
+    - trampki damskie
+    - klapki damskie
+    - buty zimowe męskie
+    - buty zimowe damskie
+    - kalosze damskie
+    - buty na koturnie
+    - baleriny damskie
+    - workery damskie
+    - sztyblety męskie
+    - buty polskiej marki
+    - obuwie damskie szerokie stopy
+    - buty trekkingowe damskie
+    - glany damskie
+    - espadryle damskie
+    - kapcie damskie
+    - buty damskie duże rozmiary
+    - buty wegańskie
+    - loafersy damskie
+  accessories:   # 25
+    - torebki damskie skórzane
+    - torebki damskie sklep internetowy
+    - torebki listonoszki
+    - plecaki damskie miejskie
+    - portfele męskie skórzane
+    - portfele damskie skórzane
+    - paski męskie skórzane
+    - biżuteria srebrna sklep internetowy
+    - kolczyki srebrne
+    - naszyjniki damskie
+    - zegarki damskie
+    - okulary przeciwsłoneczne damskie
+    - szaliki damskie
+    - czapki zimowe damskie
+    - rękawiczki skórzane damskie
+    - apaszki jedwabne
+    - nerki damskie
+    - torby męskie na ramię
+    - kapelusze damskie
+    - spinki do mankietów
+    - krawaty jedwabne
+    - bransoletki damskie
+    - torby na laptopa damskie
+    - biżuteria z pereł
+    - biżuteria pozłacana
+  sportswear:   # 20
+    - odzież sportowa damska sklep
+    - legginsy sportowe damskie
+    - staniki sportowe
+    - odzież do biegania
+    - bluzy sportowe męskie
+    - odzież fitness damska
+    - stroje do jogi
+    - odzież rowerowa
+    - odzież termoaktywna
+    - kurtki softshell damskie
+    - odzież trekkingowa
+    - spodenki do biegania męskie
+    - odzież narciarska damska
+    - kurtki narciarskie męskie
+    - dresy męskie
+    - odzież na siłownię męska
+    - kurtki puchowe outdoor
+    - koszulki kolarskie
+    - polary damskie
+    - odzież sportowa polska marka
+  kids:   # 15
+    - odzież dziecięca sklep internetowy
+    - ubranka dla niemowląt
+    - buty dziecięce
+    - kurtki dziecięce zimowe
+    - sukienki dla dziewczynek
+    - dresy dziecięce
+    - piżamy dziecięce
+    - kombinezony zimowe dziecięce
+    - buty pierwsze kroki
+    - odzież dziecięca polska marka
+    - bluzy dziecięce
+    - ubrania do chrztu
+    - ubranka organiczne dla dzieci
+    - body niemowlęce
+    - kalosze dziecięce
+  home_decor:   # 15
+    - pościel bawełniana
+    - pościel z lnu
+    - narzuty na łóżko
+    - poduszki dekoracyjne
+    - zasłony do salonu
+    - koce dekoracyjne
+    - ręczniki bawełniane
+    - obrusy lniane
+    - szlafroki damskie
+    - dywany do salonu
+    - tekstylia domowe sklep
+    - dekoracje do domu sklep internetowy
+    - lampy wiszące do salonu
+    - świece zapachowe
+    - kubki ceramiczne
