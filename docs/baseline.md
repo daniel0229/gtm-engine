@@ -33,10 +33,11 @@ How long it takes a person to research one store by hand. The AI research agent 
 | Running ads now? (Meta Ad Library: yes/no, how many) | Yes, about 83 | Meta Ad Library |
 | Return policy (days, free returns or not, how returns are submitted) | 14 days, store is paying for return, cheapest available method, email or inpost form | Store's terms and conditions (regulamin) |
 | Legal form and NIP found on the site? | JDG (sole proprietorship), NIP found (kept in private notes) | Store's terms and conditions (regulamin) |
-| ICP fit (strong / weak / no) and one sentence why | strong, running ADS, B2C, IdoSell |  |
+| ICP fit (strong / weak / no) and one sentence why | no: coffee and tea are food, an excluded category, and a sole proprietorship is not a KRS-registered company | `config/icp.yaml` (categories, firmographics) |
 
 - Start: `13:14` · End: `13:20` · **Minutes: 6**
 - What took the longest: Return policy
+- Correction (2026-11-13): first written down as "strong" (running ads, B2C, IdoSell). The excluded category and the legal-form rule were missed, which shows how easy it is to skip a rule when researching by hand.
 
 ### Store C
 
