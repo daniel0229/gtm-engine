@@ -14,7 +14,7 @@
 -- the direct Postgres connection, which bypass RLS. The demo form (step 3.1) gets its own
 -- insert-only policy on `leads` when it is built.
 --
--- Applied to Supabase as migrations `init_schema` and `messages_company_idx`. This file is kept as
+-- Applied to Supabase as migrations `init_schema`, `messages_company_idx` and `enrich_columns`. This file is kept as
 -- the full current schema; every later change is applied as a new migration and copied here.
 
 -- ---------------------------------------------------------------------------------------------
@@ -65,6 +65,16 @@ create table public.companies (
   nip                  text check (nip ~ '^[0-9]{10}$'),
   nip_source_url       text,                        -- terms or footer page the NIP was read from
   check (nip is null or nip_source_url is not null),
+  site_url             text,                        -- URL the homepage resolved to (after redirects)
+  enrich_status        text check (enrich_status in (
+                         'ok',                -- website read
+                         'redirected',        -- read, but the homepage redirects to another domain
+                         'robots_disallowed', -- robots.txt disallows the homepage
+                         'blocked',           -- bot check or HTTP 401/403/429/503
+                         'http_error',        -- other HTTP error on the homepage
+                         'unreachable'        -- DNS, TLS, connection or timeout error
+                       )),
+  enriched_at          timestamptz,
 
   -- VAT whitelist (registry step)
   name                 text,                        -- registered name
@@ -99,6 +109,7 @@ create table public.companies (
 
 create index companies_nip_idx on public.companies (nip);   -- not unique: one seller can run several domains
 create index companies_registry_status_idx on public.companies (registry_status);
+create index companies_enrich_status_idx on public.companies (enrich_status);
 
 create trigger companies_set_updated_at
   before update on public.companies
@@ -132,6 +143,7 @@ create table public.signals (
   value        jsonb not null,                      -- JSON scalar or object: true, "woocommerce", 5400, {"count": 120}
   source       text not null,                       -- data_sources id from config/icp.yaml: website, meta_ad_library, vat_whitelist, krs
   source_url   text not null,                       -- the page or API call the fact was read from
+  details      jsonb,                               -- evidence: matched patterns, keywords, sitemap files, counting method
   observed_at  timestamptz not null default now(),
   run_id       bigint references public.runs (id) on delete set null
 );
