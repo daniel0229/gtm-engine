@@ -2,7 +2,7 @@
 
 Where the GTM Engine gets its data, what each source allows and what its limits are. Every record in the database points back to one of the sources listed here.
 
-The domains collected from these lists are kept in `data/` (gitignored). This file lists only the public pages they come from.
+The domains collected from these lists are kept in `data/` (gitignored): `stores-serp.csv` (Google results) and `stores-lists.csv` (store lists). Together: 1,235 unique domains, 14 found in both. This file lists only the public pages they come from.
 
 ## 1. Store lists
 
@@ -13,8 +13,8 @@ Public pages that list many Polish online stores in one place. A script reads th
 
 | #   | Source    | URL                                                                                                    | Type | What's on it (note)               | Stores (approx.) | Extraction (HTML / pagination / JS / manual) | Terms and robots.txt allow it? | Checked on |
 | --- | --------- | ------------------------------------------------------------------------------------------------------ | ---- | --------------------------------- | ---------------- | -------------------------------------------- | ------------------------------ | ---------- |
-| 1 | Shopify blog: Polish stores on Shopify | https://www.shopify.com/pl/blog/sklepy-na-shopify | ranking | Article listing Polish stores running on Shopify, with links | 50 | manual, store links in the article text | yes | 2026-11-13 |
-| 2 | Shoper client gallery | https://www.shoper.pl/klienci (URLs from https://www.shoper.pl/sitemap.xml) | platform showcase | One page per client store, the store's domain is in the URL slug (`/klienci/pinkbox-com-pl`) | 92 | the sitemap lists every client page; the pages themselves sit behind a Cloudflare check (403), so the domain is read from the slug and confirmed by visiting the store | robots.txt allows `/`; sitemap is public | 2026-11-13 |
+| 1 | Shopify blog: Polish stores on Shopify | https://www.shopify.com/pl/blog/sklepy-na-shopify | ranking | Article listing Polish stores running on Shopify, with links | 51 collected (2026-11-14) | HTML, store links in the article; Shopify's own sites dropped; [`src/collect_lists.py`](../src/collect_lists.py) | yes | 2026-11-14 |
+| 2 | Shoper client gallery | https://www.shoper.pl/klienci (URLs from https://www.shoper.pl/sitemap.xml) | platform showcase | One page per client store, the store's domain is in the URL slug (`/klienci/pinkbox-com-pl`) | 92 in the sitemap, 91 resolved (2026-11-14) | [`src/collect_lists.py`](../src/collect_lists.py): the sitemap lists every client page; the pages themselves sit behind a Cloudflare check (403), so the domain is read from the slug (`chochliki-sklep-pl` → `chochliki.sklep.pl`) and the first candidate that answers over HTTP is kept; 1 slug matched no live domain, 1 store now redirects to a different domain (noted in the output) | robots.txt allows `/`; sitemap is public | 2026-11-13 |
 | 3 | Google search results for category queries | queried through the DataForSEO SERP API (Google, Poland, Polish) | other | Organic top results for queries like "sklep internetowy obuwie damskie", several dozen per ICP category; marketplaces and large chains filtered out | 1,107 unique domains after the blocklist (2026-11-13, 0.60 USD); ICP fit is decided later | API; queries in [`config/store-search-queries.yaml`](../config/store-search-queries.yaml); about 0.002 USD per 10 results (observed 2026-11-09), so 150 queries × top 20 ≈ 0.60 USD | paid API, results used only to collect domains | 2026-11-13 |
 
 
