@@ -14,7 +14,7 @@
 -- the direct Postgres connection, which bypass RLS. The demo form (step 3.1) gets its own
 -- insert-only policy on `leads` when it is built.
 --
--- Applied to Supabase as migrations `init_schema`, `messages_company_idx` and `enrich_columns`. This file is kept as
+-- Applied to Supabase as migrations `init_schema`, `messages_company_idx`, `enrich_columns` and `company_icp_view`. This file is kept as
 -- the full current schema; every later change is applied as a new migration and copied here.
 
 -- ---------------------------------------------------------------------------------------------
@@ -295,6 +295,61 @@ left join public.research_latest r on r.company_id = c.id
 group by c.id, r.score, r.fit, r.created_at;
 
 comment on view public.company_profile is 'One row per company: registry data, latest ICP signals and latest score. Feeds sql/queries.sql and Looker Studio.';
+
+-- ICP rules from config/icp.yaml applied to what the pipeline knows so far. One row per company:
+-- icp_status = fit / out / needs_check, and icp_reason = the first rule the company fails, in the
+-- order the pipeline checks them. The research agent's 0-100 score (phase 2) goes to `research`;
+-- this view is the rule-based filter before it. If config/icp.yaml changes, change the lists here.
+create view public.company_icp
+with (security_invoker = on) as
+with st as (
+  select company_id, bool_or((value)::boolean) filter (where type = 'is_store' and jsonb_typeof(value) = 'boolean') as is_store
+  from public.signals_latest
+  group by company_id
+),
+base as (
+  select
+    p.*,
+    c.enrich_status,
+    c.enriched_at,
+    st.is_store,
+    case
+      when p.assortment_size between 1000 and 30000 then 'core'      -- full points in icp.yaml
+      when p.assortment_size between 500 and 60000 then 'edge'       -- half points
+      when p.assortment_size < 500 then 'too_small'
+      when p.assortment_size > 60000 then 'too_large'
+    end as size_band,
+    case
+      when c.enriched_at is null                                       then 'not_enriched'
+      when c.enrich_status not in ('ok', 'redirected')                 then 'site_unreadable'
+      when st.is_store is distinct from true                           then 'not_a_store'
+      when p.category in ('food', 'digital_goods', 'services')         then 'excluded_category'
+      when p.category is null
+        or p.category not in ('fashion', 'footwear', 'accessories', 'sportswear', 'home_decor', 'kids')
+                                                                       then 'category_outside_icp'
+      when p.assortment_size is null                                   then 'size_unknown'
+      when p.assortment_size < 500                                     then 'too_small'
+      when p.assortment_size > 60000                                   then 'too_large'
+      when p.registry_status = 'no_nip_on_site' or p.nip is null       then 'no_nip_on_site'
+      when p.registry_status in ('pending', 'error')                   then 'registry_pending'
+      when p.registry_status = 'not_found'                             then 'seller_not_in_registry'
+      when p.vat_status = 'Niezarejestrowany'                          then 'vat_inactive'
+      when p.krs is null                                               then 'not_krs_company'
+    end as icp_reason
+  from public.company_profile p
+  join public.companies c on c.id = p.id
+  left join st on st.company_id = p.id
+)
+select
+  base.*,
+  case
+    when icp_reason is null then 'fit'
+    when icp_reason in ('not_enriched', 'site_unreadable', 'size_unknown', 'registry_pending') then 'needs_check'
+    else 'out'
+  end as icp_status
+from base;
+
+comment on view public.company_icp is 'company_profile plus the rule-based ICP filter from config/icp.yaml: icp_status (fit / out / needs_check), icp_reason (first rule failed), size_band.';
 
 -- ---------------------------------------------------------------------------------------------
 -- Row level security: on everywhere, no policies (see the header)
