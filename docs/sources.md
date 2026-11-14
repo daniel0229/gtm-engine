@@ -66,7 +66,7 @@ Both are queried by number only (NIP, KRS), so they enrich a store already found
 
 | Signal             | Source                                                    | How it is read                             | Limits                           |
 | ------------------ | --------------------------------------------------------- | ------------------------------------------ | -------------------------------- |
-| Active Meta ads    | Meta Ad Library                                           | *to decide: Ad Library API or public page* | *to confirm*                     |
+| Active Meta ads    | Meta Ad Library API (`ads_archive`, Graph API v27.0), ads shown in Poland | [`src/meta_ads.py`](../src/meta_ads.py): search active ads for the store's domain, then its name; keep ads whose link caption is the store's domain or whose Page name is the store's name; count all active ads of those Pages. Details in [Meta Ad Library API](#meta-ad-library-api) | no search by website; ads with no link caption from a Page with a different name are missed |
 | Store platform     | Store's own page code; IP address for Shopify             | [`src/enrich.py`](../src/enrich.py): weighted patterns in the homepage code (a single stray mention is not enough), the `generator` meta tag, response headers; a host in Shopify's network (23.227.38.0/24) counts as Shopify | pages rendered only by JavaScript show little code |
 | Product category   | Homepage title, meta description, h1, menu links          | keywords per category in [`config/category-keywords.yaml`](../config/category-keywords.yaml), plus the category of the Google query that found the domain | "other" when no category scores 3 points |
 | Assortment size    | Store's sitemaps (from robots.txt, else `/sitemap.xml`)   | products in product sitemaps, or product URLs counted by the platform's URL pattern (one per product id, so language copies count once); above 25 sitemap files the rest is estimated | no sitemap or unknown URL pattern = no value |
@@ -74,3 +74,17 @@ Both are queried by number only (NIP, KRS), so they enrich a store already found
 | Seller NIP         | Homepage footer and JSON-LD, contact, about, terms (regulamin), privacy policy as a last resort | checksum-validated; each NIP gets points for where it stands (footer, contact, start of the terms, after "Sprzedawcą jest") and loses points after a third party's name (PayU, Przelewy24, InPost, IdoSell, ...) | terms loaded only by JavaScript or as PDF are not read |
 
 The enrich step respects each store's robots.txt and waits 1 s between requests to the same store. Shopify rate-limits per client IP across all its stores (HTTP 429), so requests to Shopify-hosted stores share one 1.5 s pause, and a store answering 429 is retried on the next run instead of being marked as read.
+
+### Meta Ad Library API
+
+| Item | Value | Source |
+| --- | --- | --- |
+| Endpoint | `https://graph.facebook.com/v27.0/ads_archive` | [ads_archive reference](https://developers.facebook.com/docs/graph-api/reference/ads_archive/), checked 2026-11-14 |
+| Access | free; the person behind the token confirms their identity at facebook.com/ID and accepts the terms at facebook.com/ads/library/api; a Meta app with the Facebook Login use case, development mode, no App Review | set up 2026-11-14 |
+| Token | user token from Graph API Explorer, extended to 60 days (`META_ACCESS_TOKEN` in `.env`); `src/meta_ads.py --check-token` shows the days left | – |
+| Which ads | all ads (`ad_type=ALL`) only when they reached the EU or the UK; elsewhere political and issue ads only. Poland is in the EU, so stores' ads are covered | ads_archive reference |
+| Search | by ad text (`search_terms`, up to 100 characters) or by Page id (`search_page_ids`, up to 10 per call); not by website or domain | ads_archive reference |
+| Fields used | `page_id`, `page_name`, `ad_creative_link_captions`, `ad_delivery_start_time` | archived ad reference |
+| Not available for non-political ads | spend, impressions, audience size | archived ad reference |
+| Request limit | no number published; error 613 (and 4, 17, 80000) means the limit was hit. The script waits 2 s between calls, 20 s while Meta's usage headers are above 75%, and pauses 1, 5, then 15 minutes after a limit error before it stops the run | ads_archive reference, error handling guide |
+| Calls per store | 1 or 2 searches, plus 1 count call when a Page is found (more for Pages with over 250 active ads) | `src/meta_ads.py` |
