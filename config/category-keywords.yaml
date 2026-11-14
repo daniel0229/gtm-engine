@@ -1,0 +1,192 @@
+# Keywords that decide a store's main product category in the enrich step (src/enrich.py).
+#
+# Category ids are the category_fit values in icp.yaml plus the excluded categories
+# (target.categories.exclude), so the excluded_category disqualifier can be read from the same signal.
+# A store whose best score stays under `min_score` gets "other".
+#
+# Each keyword is a regular expression matched at the start of a word, on text that is lowercased
+# and stripped of Polish diacritics (ą->a, ł->l, ż->z ...). Write keywords without diacritics.
+# "sukienk" matches sukienka, sukienki, sukienkach.
+#
+# Where the text comes from and how much it weighs is set in `weights`. Every keyword counts once
+# per piece of text (one menu link, the title), so a long menu does not outweigh the title.
+version: 1
+
+min_score: 3
+
+weights:
+  title: 3             # <title>
+  meta_description: 3  # <meta name="description">
+  h1: 2
+  nav_link: 1          # text of each unique link on the homepage
+  serp_hint: 2         # category of the Google query the domain was found with (company_sources)
+
+categories:
+  fashion:
+    - sukienk
+    - bluzk
+    - bluz[ay]?\b
+    - spodni
+    - spodnic
+    - koszul
+    - swetr
+    - sweter
+    - kardigan
+    - kurtk
+    - plaszcz
+    - marynark
+    - odziez
+    - ubran
+    - jeans
+    - t-shirt
+    - bielizn
+    - biustonosz
+    - majtk
+    - pizam
+    - legginsy
+    - kombinezon
+    - garnitur
+    - trencz
+    - kamizelk
+    - moda\b
+    - mody\b
+    - stroj(e)? kapiel
+  footwear:
+    - buty\b
+    - butow
+    - obuwi
+    - botki
+    - kozaki
+    - szpilki
+    - sneakers
+    - trampki
+    - sandal
+    - mokasyn
+    - polbuty
+    - czolenk
+    - baleriny
+    - klapki
+    - kalosze
+    - trzewik
+    - espadryl
+    - kapcie
+  accessories:
+    - torebk
+    - torby\b
+    - torba\b
+    - portfel
+    - plecak
+    - bizuteri
+    - naszyjnik
+    - bransolet
+    - kolczyk
+    - pierscion
+    - zegark
+    - okulary
+    - szal(e|ik)
+    - apaszk
+    - czapk
+    - rekawiczk
+    - kapelusz
+    - akcesori
+  sportswear:
+    - sport
+    - fitness
+    - trening
+    - biegani
+    - joga\b
+    - jogi\b
+    - silowni
+    - outdoor
+    - turystyczn
+    - narciarsk
+    - rowerow
+  kids:
+    - dzieci
+    - dzieck
+    - dziecie
+    - niemowl
+    - noworod
+    - baby\b
+    - zabawk
+    - wozk
+    - chlopiec
+    - dziewcze
+    - maluch
+  home_decor:
+    - dekoracj
+    - wystroj
+    - posciel
+    - poduszk
+    - zaslon
+    - firan
+    - dywan
+    - wazon
+    - swiec
+    - lamp
+    - oswietleni
+    - mebl
+    - recznik
+    - obrus
+    - koc(e|y)?\b
+    - narzut
+    - tekstyli
+    - wnetrz
+  electronics:
+    - elektronik
+    - smartfon
+    - telefon
+    - laptop
+    - komputer
+    - rtv\b
+    - agd\b
+    - sluchawk
+    - telewizor
+    - konsol
+    - gaming
+    - ladowark
+    - podzespol
+  beauty:
+    - kosmety
+    - perfum
+    - makijaz
+    - pielegnac
+    - kremy?\b
+    - serum
+    - szampon
+    - paznokc
+    - lakier(y|ow)? hybryd
+    - urod[ay]
+    - drogeri
+  food:
+    - kawa\b
+    - kawy\b
+    - kawie\b
+    - herbat
+    - zywnos
+    - jedzeni
+    - delikates
+    - slodycz
+    - czekolad
+    - wina\b
+    - wino\b
+    - alkohol
+    - przypraw
+    - suplement
+    - bakali
+    - miod
+    - makaron
+    - spozywcz
+  digital_goods:
+    - e-?book
+    - audiobook
+    - kurs(y)? online
+    - licencj
+    - oprogramowan
+    - kod(y)? aktywac
+    - szablon
+  services:
+    - uslug
+    - rezerwac
+    - umow wizyt
+    - gabinet
