@@ -14,7 +14,7 @@
 -- the direct Postgres connection, which bypass RLS. The demo form (step 3.1) gets its own
 -- insert-only policy on `leads` when it is built.
 --
--- Applied to Supabase as migrations `init_schema`, `messages_company_idx`, `enrich_columns` and `company_icp_view`. This file is kept as
+-- Applied to Supabase as migrations `init_schema`, `messages_company_idx`, `enrich_columns`, `company_icp_view` and `company_icp_no_krs_filter`. This file is kept as
 -- the full current schema; every later change is applied as a new migration and copied here.
 
 -- ---------------------------------------------------------------------------------------------
@@ -334,7 +334,6 @@ base as (
       when p.registry_status in ('pending', 'error')                   then 'registry_pending'
       when p.registry_status = 'not_found'                             then 'seller_not_in_registry'
       when p.vat_status = 'Niezarejestrowany'                          then 'vat_inactive'
-      when p.krs is null                                               then 'not_krs_company'
     end as icp_reason
   from public.company_profile p
   join public.companies c on c.id = p.id
@@ -349,7 +348,7 @@ select
   end as icp_status
 from base;
 
-comment on view public.company_icp is 'company_profile plus the rule-based ICP filter from config/icp.yaml: icp_status (fit / out / needs_check), icp_reason (first rule failed), size_band.';
+comment on view public.company_icp is 'company_profile plus the rule-based ICP filter from config/icp.yaml (v2): icp_status (fit / out / needs_check), icp_reason (first rule failed), size_band. A seller without a KRS entry is not filtered out; it only scores lower (registered_company).';
 
 -- ---------------------------------------------------------------------------------------------
 -- Row level security: on everywhere, no policies (see the header)

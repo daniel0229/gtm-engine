@@ -28,8 +28,7 @@ with steps (step_no, icp_reason, step) as (
     (9,  'no_nip_on_site',         'No NIP on the website'),
     (10, 'registry_pending',       'Registry not checked yet'),
     (11, 'seller_not_in_registry', 'NIP not in the VAT whitelist'),
-    (12, 'vat_inactive',           'VAT status not active'),
-    (13, 'not_krs_company',        'Not a KRS company (sole trader, civil partnership)')
+    (12, 'vat_inactive',           'VAT status not active')
 ),
 dropped as (
   select icp_reason, count(*) as companies from public.company_icp group by icp_reason
@@ -46,7 +45,7 @@ from steps s
 cross join total t
 left join dropped d on d.icp_reason = s.icp_reason
 union all
-select 14, 'Fits the ICP', 'fit', null,
+select 13, 'Fits the ICP', 'fit', null,
        (select count(*) from public.company_icp where icp_status = 'fit')
 order by step_no;
 
