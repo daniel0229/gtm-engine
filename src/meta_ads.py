@@ -32,11 +32,14 @@ against docs/baseline.md measures how often that happens.
 Usage (from the repo root):
   .venv/bin/python src/meta_ads.py --check-token                # is the token valid, when does it expire
   .venv/bin/python src/meta_ads.py --dry-run --domain sklep.pl  # query one store, print, write nothing
-  .venv/bin/python src/meta_ads.py --limit 20                   # first 20 stores not checked yet
-  .venv/bin/python src/meta_ads.py                              # every store not checked yet
+  .venv/bin/python src/meta_ads.py --limit 20                   # first 20 ICP-fit stores not checked yet
+  .venv/bin/python src/meta_ads.py                              # every ICP-fit store not checked yet
+  .venv/bin/python src/meta_ads.py --icp needs_check            # stores still waiting for an ICP decision
   .venv/bin/python src/meta_ads.py --redo --limit 50            # check already checked stores again
 
-Stores = companies whose latest is_store signal (enrich step) is true. Safe to stop with Ctrl-C.
+Stores = companies whose latest is_store signal (enrich step) is true and whose icp_status in the
+company_icp view is in --icp (default: fit; --icp all = every store). The ads check is the costly
+step, so it runs only on stores that already pass the ICP rules. Safe to stop with Ctrl-C.
 
 Credentials come from .env: META_ACCESS_TOKEN (60-day user token of an app with Ad Library API
 access), SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.
@@ -339,9 +342,13 @@ def fetch_all(db: Supabase, path: str) -> list[dict]:
         offset += PAGE_SIZE
 
 
-def load_stores(db: Supabase, domains: list[str], redo: bool, limit: int | None) -> list[dict]:
+def load_stores(db: Supabase, domains: list[str], redo: bool, limit: int | None,
+                icp: list[str]) -> list[dict]:
     stores = {r["company_id"] for r in fetch_all(
         db, "/signals_latest?select=company_id&type=eq.is_store&value=eq.true&order=company_id")}
+    if "all" not in icp:
+        stores &= {r["id"] for r in fetch_all(
+            db, f"/company_icp?select=id&icp_status=in.({','.join(icp)})&order=id")}
     done = set() if redo or domains else {r["company_id"] for r in fetch_all(
         db, "/signals?select=company_id&type=eq.meta_ads_active&order=id")}
     rows = fetch_all(db, "/companies?select=id,domain,site_url,enrich_status&order=id")
@@ -387,6 +394,8 @@ def main() -> None:
     ap.add_argument("--domain", action="append", default=[], help="only this domain (repeatable)")
     ap.add_argument("--limit", type=int, help="at most this many stores")
     ap.add_argument("--redo", action="store_true", help="also stores already checked")
+    ap.add_argument("--icp", action="append", choices=["fit", "needs_check", "out", "all"],
+                    help="only stores with this icp_status (repeatable, default: fit)")
     ap.add_argument("--dry-run", action="store_true", help="query the API and print, write nothing to Supabase")
     ap.add_argument("--check-token", action="store_true", help="show the token's app and expiry, then stop")
     ap.add_argument("--env", type=Path, default=ROOT / ".env")
@@ -409,7 +418,7 @@ def main() -> None:
     if not db and not (a.dry_run and a.domain):
         sys.exit("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env (a dry run with --domain works without).")
     if db:
-        companies = load_stores(db, a.domain, a.redo, a.limit)
+        companies = load_stores(db, a.domain, a.redo, a.limit, a.icp or ["fit"])
     else:
         companies = [{"id": None, "domain": d, "site_url": None, "enrich_status": None} for d in a.domain]
     missing = sorted(set(a.domain) - {c["domain"] for c in companies})
