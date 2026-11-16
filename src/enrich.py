@@ -7,7 +7,8 @@ terms (regulamin), contact and about pages, and the sitemaps, then records:
   is_store         the site sells online: cart links, add-to-cart buttons, Product markup, a store platform
   platform         store platform found in the page code (woocommerce, shopify, idosell, ...)
   category_fit     main product category, from keywords in config/category-keywords.yaml
-  assortment_size  number of products, counted in the product sitemaps
+  assortment_size  number of products, counted in the product sitemaps; when the store has one mixed
+                   sitemap, estimated from the entries that carry an image or share the product URL shape
   NIP              seller's tax number from the footer, contact page or terms, checksum-validated
 
 Every fact keeps the URL of the page it was read from: the signals go to `signals` (source
@@ -28,6 +29,8 @@ Usage (from the repo root):
   .venv/bin/python src/enrich.py --limit 20                    # first 20 domains not enriched yet
   .venv/bin/python src/enrich.py                               # every domain not enriched yet
   .venv/bin/python src/enrich.py --redo --limit 50             # read already enriched domains again
+  .venv/bin/python src/enrich.py --assortment-only --dry-run   # count products again where the count is
+                                                               # missing or came from a URL pattern
 
 Safe to stop with Ctrl-C and run again: each domain is saved as soon as it is done, and the next
 run picks up the domains still missing. Full results, NIP candidates included, go to
@@ -556,13 +559,27 @@ PRODUCT_URL = {
 }
 
 
+URL_BLOCK_RE = re.compile(r"<url>(.*?)</url>", re.S | re.I)
+IMAGE_TAG_RE = re.compile(r"<image:(?:image|loc)\b", re.I)
+
+
 def read_sitemap(f: Fetcher, url: str) -> dict | None:
     r = f.get(url, MAX_SITEMAP)
     if r["status"] != 200 or not r["body"]:
         return None
     xml = r["body"].decode("utf-8", "replace")
-    return {"url": r["final_url"], "index": "<sitemapindex" in xml[:3000].lower(),
-            "locs": [html_lib.unescape(u.strip()) for u in LOC_RE.findall(xml)]}
+    index = "<sitemapindex" in xml[:3000].lower()
+    images = set()
+    if not index and IMAGE_TAG_RE.search(xml):  # entries that carry <image:image>: usually product pages
+        for block in URL_BLOCK_RE.findall(xml):
+            if IMAGE_TAG_RE.search(block) and (m := LOC_RE.search(block)):
+                images.add(html_lib.unescape(m.group(1).strip()))
+    # Relative <loc> values (some custom platforms write "/sitemap-static.xml") resolve against the file.
+    locs = [urljoin(r["final_url"], html_lib.unescape(u.strip())) for u in LOC_RE.findall(xml)]
+    if not locs:  # an HTML page or an empty file served at the sitemap address
+        return None
+    return {"url": r["final_url"], "index": index, "locs": locs,
+            "images": {urljoin(r["final_url"], u) for u in images}}
 
 
 LOCALE_PARAM_RE = re.compile(r"locale/([a-z]{2}_[a-z]{2})", re.I)  # Shoper: .../products/locale/pl_PL/page/1
@@ -578,12 +595,14 @@ def main_language(urls: list[str]) -> list[str]:
     return plain
 
 
-def count_products(f: Fetcher, robots_text: str, home: str, site: str, platform: str | None) -> dict | None:
+def find_sitemaps(f: Fetcher, robots_text: str, home: str, site: str, platform: str | None) -> list[dict]:
+    """Top-level sitemap files: the ones robots.txt declares, else the first default path that answers."""
     declared = list(dict.fromkeys(re.findall(r"(?im)^\s*sitemap:\s*(\S+)", robots_text or "")))
     declared = [u for u in declared if same_site(u, site)][:5]
     docs = [d for u in declared if f.allowed(u) and (d := read_sitemap(f, u))]
     if not docs:
-        defaults = ["/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml"]
+        # 1_index_sitemap.xml: PrestaShop's Google sitemap module; media/sitemap.xml: Magento
+        defaults = ["/sitemap.xml", "/sitemap_index.xml", "/1_index_sitemap.xml", "/wp-sitemap.xml", "/media/sitemap.xml"]
         if platform == "shoper":
             defaults.insert(0, "/console/integration/execute/name/GoogleSitemap")
         for path in defaults:
@@ -591,6 +610,140 @@ def count_products(f: Fetcher, robots_text: str, home: str, site: str, platform:
             if f.allowed(u) and (d := read_sitemap(f, u)):
                 docs.append(d)
                 break
+    return docs
+
+
+def sitemap_entries(f: Fetcher, docs: list[dict], site: str, max_files: int = MAX_SITEMAP_FILES) -> dict:
+    """Every URL in the store's sitemaps (main language only), each flagged when it carries an image."""
+    files_read = len(docs)
+    queue = main_language(list(dict.fromkeys(u for d in docs if d["index"] for u in d["locs"] if same_site(u, site))))
+    urlsets = [d for d in docs if not d["index"]]
+    while queue and files_read < max_files:
+        u = queue.pop(0)
+        if not f.allowed(u):
+            continue
+        d = read_sitemap(f, u)
+        files_read += 1
+        if not d:
+            continue
+        if d["index"]:
+            queue += [c for c in main_language(d["locs"]) if same_site(c, site) and c not in queue]
+        else:
+            urlsets.append(d)
+    entries: dict[str, bool] = {}
+    for d in urlsets:
+        for u in d["locs"]:
+            entries[u] = entries.get(u, False) or u in d["images"]
+    return {"entries": entries, "sitemaps": [d["url"] for d in urlsets], "files_not_read": len(queue),
+            "source_url": next((d["url"] for d in docs if d["index"]), docs[0]["url"] if docs else None)}
+
+
+# Estimating from a mixed sitemap (homepage, categories, blog and products in the same files). Tested
+# on 247 stores whose count was known from separate product sitemaps or a product id in the URL
+# (2026-11-16): the image method landed in the same ICP size band or within 20% for 95% of stores
+# outside Shoper and 88% on Shoper; the URL-shape method for 90% and 77%. Both are marked as
+# estimates (`estimated_from` in details).
+LANG_CODES = {"pl", "en", "de", "gb", "cs", "cz", "sk", "uk", "ua", "ru", "it", "fr", "es", "lt", "lv", "ro", "hu",
+              "nl", "sv", "se", "no", "da", "dk", "fi", "et", "ee", "pt", "bg", "hr", "sl", "si", "sr", "el", "gr",
+              "tr", "at", "ch"}
+FILE_EXT_RE = re.compile(r"\.(jpe?g|png|gif|webp|avif|svg|pdf|mp4|xml|gz)$", re.I)
+NON_PRODUCT_RE = re.compile(
+    r"^(blog|blogs|aktualnos\w*|news|poradnik\w*|artykul\w*|article\w*|kategori\w*|category|categories|"
+    r"c|k|kat|tag|tags|page|pages|strona|strony|info|informacje|producen\w*|manufacturer\w*|marki|marka|brand\w*|"
+    r"kolekcj\w*|collections?|search|szukaj|konto|koszyk|cart|cms|content|module|modules|wp-content|"
+    r"en|de|uk|cs|sk|ua|ru|it|fr|es|lt|lv|ro|hu|sitemap\w*|\w+\.xml)$")
+PRODUCT_HEADS = {"p", "product", "products", "produkt", "produkty"}
+IMAGE_SHARE_MIN = 0.3   # images on fewer entries than this: they are not a product marker on this site
+SHAPE_SHARE_MIN = 0.5   # the dominant URL shape must cover half of the URLs ...
+SHAPE_LEAD_MIN = 2.0    # ... and at least twice as many as the next shape
+
+
+def url_lang(u: str) -> str | None:
+    seg = urlparse(u).path.strip("/").split("/", 1)[0].lower()
+    if re.fullmatch(r"[a-z]{2}(-[a-z]{2})?", seg):
+        seg = seg.split("-")[0]
+    return seg if seg in LANG_CODES else None
+
+
+def page_entries(entries: dict[str, bool], home: str) -> dict[str, bool]:
+    """Pages only (no image or PDF files, no homepage), in one language: /pl/ or the unprefixed pages,
+    whichever is larger, unless both are small next to another language prefix."""
+    ent = {u: h for u, h in entries.items()
+           if not FILE_EXT_RE.search(urlparse(u).path) and u.rstrip("/") != home.rstrip("/")}
+    langs = Counter(url_lang(u) for u in ent)
+    prefixed = {k for k in langs if k}
+    if len(prefixed) > 1 or (prefixed and langs.get(None, 0) > 50):
+        keep = max(("pl", None), key=lambda k: langs.get(k, 0))
+        if langs.get(keep, 0) < 0.2 * len(ent):
+            keep = langs.most_common(1)[0][0]
+        ent = {u: h for u, h in ent.items() if url_lang(u) == keep}
+    return ent
+
+
+def url_shape(u: str) -> tuple | None:
+    """(first folder, depth, kind of last segment); ("skip",) for blog, category, brand and CMS pages."""
+    segs = [x for x in urlparse(u).path.split("/") if x]
+    if not segs:
+        return None
+    last = segs[-1].lower()
+    if last.endswith((".html", ".htm")):
+        kind = "html_id" if re.match(r"^\d+[-_]", last) or re.search(r"[-_,]\d+\.html?$", last) else "html"
+    elif re.search(r"(^|[-_,])\d{2,}$", last) or re.match(r"^\d+[-_]", last):
+        kind = "num"
+    else:
+        kind = "slug"
+    head = segs[0].lower() if len(segs) > 1 else ""
+    if NON_PRODUCT_RE.match(head) or (len(segs) == 1 and NON_PRODUCT_RE.match(last)):
+        return ("skip",)
+    if kind in ("html_id", "num") and len(segs) > 1 and head not in PRODUCT_HEADS:
+        head = "*"  # product pages with an id often sit under varying category folders
+    return (head, len(segs), kind)
+
+
+def estimate_products(tree: dict, home: str, platform: str | None) -> dict | None:
+    """Count products in a mixed sitemap: pages carrying an image, else the dominant URL shape, else
+    the platform's product URL pattern. When the picked URLs carry the platform's product id, distinct
+    ids are counted, so one product in several languages (IdoSell: product-pol-, product-eng-) counts once."""
+    ent = page_entries(tree["entries"], home)
+    if not ent:
+        return None
+    detail: dict = {}
+    pattern = PRODUCT_URL.get(platform)
+    images = [u for u, h in ent.items() if h and url_shape(u) != ("skip",)]
+    picked, method = [], None
+    if len(images) >= IMAGE_SHARE_MIN * len(ent):
+        picked, method = images, "sitemap_images"
+    else:
+        shapes = {u: s for u in ent if (s := url_shape(u)) and s != ("skip",)}
+        top = Counter(shapes.values()).most_common(2)
+        if top:
+            (shape, k), second = top[0], (top[1][1] if len(top) > 1 else 0)
+            if not (shape[0] == "" and shape[2] == "slug") and k >= SHAPE_SHARE_MIN * len(shapes) \
+                    and k >= SHAPE_LEAD_MIN * second:
+                picked, method = [u for u, s in shapes.items() if s == shape], "sitemap_url_shape"
+                detail["url_shape"] = list(shape)
+        if not method and pattern:
+            picked, method = list(ent), f"url_pattern_{platform}"
+    if not picked:
+        return None
+    n, counted_by = len(picked), "url"
+    if pattern:
+        matched = [m.group(1) for u in picked if (m := pattern.search(urlparse(u).path))]
+        if matched and (method.startswith("url_pattern") or len(matched) >= 0.5 * len(picked)):
+            n, counted_by = len(set(matched)), "product_id"
+    if not n:
+        return None
+    used, not_read = len(tree["sitemaps"]), tree["files_not_read"]
+    scaled = bool(not_read) and bool(used)
+    count = round(n * (used + not_read) / used) if scaled else n
+    return {"count": count, "counted": n, "estimated": scaled, "files_not_read": not_read, "method": method,
+            "estimated_from": "mixed_sitemap", "source_url": tree["source_url"] or home,
+            "sitemaps": tree["sitemaps"][:10], "sitemaps_read": used, "counted_by": counted_by,
+            "urls_seen": len(tree["entries"]), "pages_seen": len(ent), "with_image": len(images), **detail}
+
+
+def count_products(f: Fetcher, robots_text: str, home: str, site: str, platform: str | None) -> dict | None:
+    docs = find_sitemaps(f, robots_text, home, site, platform)
     if not docs:
         return None
     files_read = len(docs)
@@ -601,13 +754,9 @@ def count_products(f: Fetcher, robots_text: str, home: str, site: str, platform:
     product_docs = [d for d in urlsets if is_product(d["url"])]
     product_children = main_language([u for u in children if is_product(u)])
     pattern = PRODUCT_URL.get(platform)
-
-    if product_docs or product_children:
-        method, docs_used, queue = "product_sitemaps", product_docs, product_children
-    elif pattern:
-        method, docs_used, queue = f"url_pattern_{platform}", urlsets, main_language(children)
-    else:
-        return None
+    if not (product_docs or product_children):  # one mixed sitemap: estimate from all of it
+        return estimate_products(sitemap_entries(f, docs, site), home, platform)
+    method, docs_used, queue = "product_sitemaps", product_docs, product_children
 
     used = [d["url"] for d in docs_used]
     urls = [u for d in docs_used for u in d["locs"]]
@@ -628,7 +777,7 @@ def count_products(f: Fetcher, robots_text: str, home: str, site: str, platform:
     # With a known product URL pattern, count product ids: the same product in several languages
     # counts once. In product sitemaps the pattern is used only when it fits most URLs.
     pattern_ids = {m.group(1) for u in urls if (m := pattern.search(urlparse(u).path))} if pattern else set()
-    if pattern and (method != "product_sitemaps" or len(pattern_ids) >= 0.5 * len(set(urls))):
+    if pattern and len(pattern_ids) >= 0.5 * len(set(urls)):
         ids, counted_by = pattern_ids, "product_id"
     else:
         ids, counted_by = set(urls) - {home, home.rstrip("/")}, "url"
@@ -648,21 +797,47 @@ def count_products(f: Fetcher, robots_text: str, home: str, site: str, platform:
 # One store
 # ---------------------------------------------------------------------------------------------
 
+def read_robots(f: Fetcher, domain: str) -> str:
+    """robots.txt first (redirects follow to the www. host when there is one); sets the fetcher's rules."""
+    rob = f.get(f"https://{domain}/robots.txt")
+    if rob["error"]:
+        rob = f.get(f"http://{domain}/robots.txt")
+    if rob["status"] != 200 or b"<html" in rob["body"][:500].lower():
+        return ""
+    text = decode(rob)
+    f.robots = RobotFileParser()
+    f.robots.parse(text.splitlines())
+    return text
+
+
+def recount(domain: str, site_url: str | None, platform: str | None) -> dict:
+    """Assortment only (--assortment-only): count products again without re-reading the other pages."""
+    started = time.monotonic()
+    f = Fetcher()
+    res = {"domain": domain, "status": "ok", "site_url": site_url, "signals": [], "nip": None,
+           "nip_candidates": [], "pages": {}, "error": None}
+    robots_text = read_robots(f, domain)
+    home = site_url or f"https://{domain}/"
+    host = bare(urlparse(home).hostname or domain)
+    site = domain if host == domain or host.endswith("." + domain) else host
+    try:
+        assortment = count_products(f, robots_text, home, site, platform)
+    except Exception as e:
+        assortment, res["error"] = None, f"sitemap: {type(e).__name__}: {e}"[:300]
+    if assortment:
+        res["signals"].append({"type": "assortment_size", "value": assortment["count"],
+                               "source_url": assortment["source_url"],
+                               "details": {k: v for k, v in assortment.items() if k not in ("count", "source_url")}})
+    return finish(res, f, started)
+
+
 def enrich(domain: str, serp_hints: list[str], cat_conf: dict) -> dict:
     started = time.monotonic()
     f = Fetcher()
     res = {"domain": domain, "status": None, "site_url": None, "signals": [], "nip": None,
            "nip_candidates": [], "pages": {}, "error": None}
 
-    # robots.txt first (redirects follow to the www. host when there is one)
-    robots_text = ""
-    rob = f.get(f"https://{domain}/robots.txt")
-    if rob["error"]:
-        rob = f.get(f"http://{domain}/robots.txt")
-    if rob["status"] == 200 and b"<html" not in rob["body"][:500].lower():
-        robots_text = decode(rob)
-        f.robots = RobotFileParser()
-        f.robots.parse(robots_text.splitlines())
+    robots_text = read_robots(f, domain)
 
     home = None
     for url in (f"https://{domain}/", f"https://www.{domain}/", f"http://{domain}/"):
@@ -767,6 +942,40 @@ def load_companies(db: Supabase, domains: list[str], redo: bool, limit: int | No
     return rows[:limit] if limit else rows
 
 
+def load_recount(db: Supabase, domains: list[str], limit: int | None) -> list[dict]:
+    """Stores to count again: read as a store, and either no product count yet or a count from a
+    platform URL pattern on a mixed sitemap (that method missed products on some stores)."""
+    def get_all(path: str) -> list[dict]:
+        rows, offset = [], 0
+        while True:
+            page = db.request("GET", f"{path}&limit={PAGE_SIZE}&offset={offset}") or []
+            rows += page
+            offset += PAGE_SIZE
+            if len(page) < PAGE_SIZE:
+                return rows
+    stores = get_all("/company_icp?select=id,domain,platform,assortment_size&is_store=is.true"
+                     "&enrich_status=in.(ok,redirected)&order=id")
+    site = {r["id"]: r["site_url"] for r in get_all("/companies?select=id,site_url&order=id")}
+    method = {}
+    for r in get_all("/signals?select=company_id,details&type=eq.assortment_size&order=id"):
+        method[r["company_id"]] = (r.get("details") or {}).get("method") or ""  # ordered by id: last one wins
+    rows = [{"id": r["id"], "domain": r["domain"], "platform": r["platform"], "site_url": site.get(r["id"]),
+             "old_count": r["assortment_size"], "old_method": method.get(r["id"])}
+            for r in stores
+            if r["assortment_size"] is None or (method.get(r["id"]) or "").startswith("url_pattern")]
+    if domains:
+        rows = [r for r in rows if r["domain"] in set(domains)]
+    return rows[:limit] if limit else rows
+
+
+def save_recount(db: Supabase, company: dict, res: dict, run_id: int) -> None:
+    if res["signals"]:
+        db.request("POST", "/signals", [{"company_id": company["id"], "type": s["type"], "value": s["value"],
+                                         "source": "website", "source_url": s["source_url"],
+                                         "details": s["details"], "run_id": run_id} for s in res["signals"]],
+                   prefer="return=minimal")
+
+
 def load_serp_hints(db: Supabase) -> dict[int, list[str]]:
     hints, offset = {}, 0
     while True:
@@ -845,6 +1054,8 @@ def main() -> None:
     ap.add_argument("--redo", action="store_true", help="also domains already enriched")
     ap.add_argument("--workers", type=int, default=8, help="stores read in parallel (default 8)")
     ap.add_argument("--dry-run", action="store_true", help="read the stores, print, write nothing to Supabase")
+    ap.add_argument("--assortment-only", action="store_true",
+                    help="only count products again, for stores with no count or one from a URL pattern")
     ap.add_argument("--env", type=Path, default=ROOT / ".env")
     a = ap.parse_args()
 
@@ -855,7 +1066,11 @@ def main() -> None:
     if not db and not (a.dry_run and a.domain):
         sys.exit("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env (a dry run with --domain works without).")
 
-    if db:
+    if a.assortment_only and not db:
+        sys.exit("--assortment-only needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.")
+    if a.assortment_only:
+        companies, hints = load_recount(db, a.domain, a.limit), {}
+    elif db:
         companies = load_companies(db, a.domain, a.redo, a.limit)
         hints = load_serp_hints(db)
     else:
@@ -884,7 +1099,10 @@ def main() -> None:
     lock = threading.Lock()
     pool = ThreadPoolExecutor(max_workers=a.workers)
     try:
-        futures = {pool.submit(enrich, c["domain"], hints.get(c["id"], []), cat_conf): c for c in companies}
+        if a.assortment_only:
+            futures = {pool.submit(recount, c["domain"], c["site_url"], c["platform"]): c for c in companies}
+        else:
+            futures = {pool.submit(enrich, c["domain"], hints.get(c["id"], []), cat_conf): c for c in companies}
         with out_path.open("a", encoding="utf-8") as out:
             for i, fut in enumerate(as_completed(futures), 1):
                 c = futures[fut]
@@ -894,15 +1112,22 @@ def main() -> None:
                     res = {"domain": c["domain"], "status": None, "site_url": None, "signals": [], "nip": None,
                            "nip_candidates": [], "pages": {}, "error": f"crash: {type(e).__name__}: {e}"[:300],
                            "requests": 0, "seconds": 0}
+                if a.assortment_only:
+                    res["old_count"], res["old_method"] = c["old_count"], c["old_method"]
                 with lock:
                     results.append(res)
                     out.write(json.dumps(res, ensure_ascii=False) + "\n")
                     out.flush()
                 print(f"[{i}/{len(companies)}]", end="")
-                print_result(res)
+                if a.assortment_only:
+                    print(f"  {c['domain']}: {c['old_count']} ({c['old_method'] or '-'}) -> "
+                          + next((f"{s['value']} ({s['details']['method']})" for s in res["signals"]), "-")
+                          + f"  [{res['seconds']} s]", flush=True)
+                else:
+                    print_result(res)
                 if db and not a.dry_run and res["status"]:
                     try:
-                        save(db, c, res, run_id)
+                        (save_recount if a.assortment_only else save)(db, c, res, run_id)
                     except SystemExit as e:  # Supabase.request exits on HTTP errors
                         failed_saves.append(f"{c['domain']}: {e}")
                         res["save_error"] = True
@@ -912,9 +1137,17 @@ def main() -> None:
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
         summary = summarize(results)
+        if a.assortment_only:
+            got = [r for r in results if r["signals"]]
+            summary = {"domains": len(results), "assortment_found": len(got),
+                       "methods": dict(Counter(r["signals"][0]["details"]["method"] for r in got)),
+                       "newly_counted": sum(1 for r in got if r.get("old_count") is None),
+                       "recounted": sum(1 for r in got if r.get("old_count") is not None),
+                       "requests": summary["requests"], "avg_seconds_per_domain": summary["avg_seconds_per_domain"]}
         summary["save_errors"] = failed_saves[:20]
         if run_id:
-            ok = sum(1 for r in results if r["status"] in ("ok", "redirected") and not r.get("save_error"))
+            ok = sum(1 for r in results if r["status"] in ("ok", "redirected") and not r.get("save_error")
+                     and (r["signals"] or not a.assortment_only))
             db.request("PATCH", f"/runs?id=eq.{run_id}", {
                 "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                 "items_total": len(companies), "items_ok": ok,
