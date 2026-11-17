@@ -14,7 +14,12 @@
 -- the direct Postgres connection, which bypass RLS. The demo form (step 3.1) gets its own
 -- insert-only policy on `leads` when it is built.
 --
--- Applied to Supabase as migrations `init_schema`, `messages_company_idx`, `enrich_columns`, `company_icp_view` and `company_icp_no_krs_filter`. This file is kept as
+-- Looker Studio logs in as `looker_reader`, which can read only the `reporting` schema: views with
+-- no domains, company names or NIPs (see the end of this file). Its password is set outside migrations.
+--
+-- Applied to Supabase as migrations `init_schema`, `messages_company_idx`, `enrich_columns`, `company_icp_view`,
+-- `company_icp_no_krs_filter`, `reporting_schema_looker`, `reporting_stores_definer`,
+-- `reporting_stores_grant_execute` and `reporting_stores_labels`. This file is kept as
 -- the full current schema; every later change is applied as a new migration and copied here.
 
 -- ---------------------------------------------------------------------------------------------
@@ -349,6 +354,127 @@ select
 from base;
 
 comment on view public.company_icp is 'company_profile plus the rule-based ICP filter from config/icp.yaml (v2): icp_status (fit / out / needs_check), icp_reason (first rule failed), size_band. A seller without a KRS entry is not filtered out; it only scores lower (registered_company).';
+
+-- ---------------------------------------------------------------------------------------------
+-- Reporting for Looker Studio: schema `reporting`, read by the login role `looker_reader` only
+-- ---------------------------------------------------------------------------------------------
+-- The views in `reporting` carry no domains, company names or NIPs, so a shared report cannot leak
+-- a store's identity. company_icp and company_profile are security_invoker views: they check the
+-- reader's rights even when called from another view, and looker_reader must not read the tables.
+-- So the rows come from a security definer function in `reporting_internal`, a schema looker_reader
+-- cannot see, and reporting.stores wraps that function.
+
+create schema reporting;
+comment on schema reporting is 'Read-only views for Looker Studio: aggregate-safe, no domains, names or NIPs.';
+
+create schema reporting_internal;
+comment on schema reporting_internal is 'Definitions behind the reporting views; not readable by looker_reader.';
+
+-- One row per company. Labels and *_order columns are there so Looker Studio charts need no formulas.
+create view reporting_internal.stores_base as
+with meta as (
+  select distinct on (company_id)
+    company_id,
+    case when details->>'active_ads' ~ '^[0-9]+$' then (details->>'active_ads')::integer end as active_ads
+  from public.signals
+  where type = 'meta_ads_active'
+  order by company_id, observed_at desc, id desc
+)
+select
+  i.id                                                             as company_id,
+  coalesce(i.is_store, false)                                      as is_store,
+  coalesce(i.platform, 'unknown')                                  as platform,
+  coalesce(i.category, 'unknown')                                  as category,
+  i.assortment_size,
+  coalesce(i.size_band, 'unknown')                                 as size_band,
+  case i.size_band when 'too_small' then 1 when 'edge' then 2 when 'core' then 3
+                   when 'too_large' then 4 else 5 end              as size_band_order,
+  case
+    when i.assortment_size is null then 'unknown'
+    when i.assortment_size < 500   then '< 500'
+    when i.assortment_size < 1000  then '500-999'
+    when i.assortment_size <= 30000 then '1k-30k'
+    when i.assortment_size <= 60000 then '30k-60k'
+    else '> 60k'
+  end                                                              as size_range,
+  i.icp_status,
+  coalesce(i.icp_reason, 'fits_icp')                               as icp_reason,
+  case coalesce(i.icp_reason, 'fits_icp')                          -- the order company_icp checks the rules in
+    when 'not_enriched' then 1 when 'site_unreadable' then 2 when 'not_a_store' then 3
+    when 'excluded_category' then 4 when 'category_outside_icp' then 5 when 'size_unknown' then 6
+    when 'too_small' then 7 when 'too_large' then 8 when 'no_nip_on_site' then 9
+    when 'registry_pending' then 10 when 'seller_not_in_registry' then 11 when 'vat_inactive' then 12
+    else 13
+  end                                                              as icp_reason_order,
+  case
+    when i.nip is null                                   then 'no NIP found'
+    when i.legal_form = 'SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ' then 'sp. z o.o.'
+    when i.legal_form in ('SPÓŁKA AKCYJNA', 'PROSTA SPÓŁKA AKCYJNA') then 'S.A. / P.S.A.'
+    when i.legal_form in ('SPÓŁKA KOMANDYTOWA', 'SPÓŁKA KOMANDYTOWO-AKCYJNA') then 'sp.k. / S.K.A.'
+    when i.legal_form = 'SPÓŁKA JAWNA'                   then 'sp.j.'
+    when i.registered_company                            then 'other KRS entity'
+    else 'sole trader / civil partnership'
+  end                                                              as seller_type,
+  i.registered_company                                             as in_krs,
+  (i.nip is not null)                                              as has_nip,
+  coalesce(i.vat_status, 'unknown')                                as vat_status,
+  i.city,
+  case when i.meta_ads_active then 'active ads'
+       when i.meta_ads_active = false then 'no active ads'
+       else 'not checked' end                                      as meta_ads,
+  i.meta_ads_active,
+  m.active_ads                                                     as meta_active_ads,
+  i.created_at::date                                               as added_on,
+  case
+    when i.assortment_size is null then 6
+    when i.assortment_size < 500   then 1
+    when i.assortment_size < 1000  then 2
+    when i.assortment_size <= 30000 then 3
+    when i.assortment_size <= 60000 then 4
+    else 5
+  end                                                              as size_range_order,
+  case coalesce(i.icp_reason, 'fits_icp')
+    when 'not_enriched'           then 'Website not read yet'
+    when 'site_unreadable'        then 'Website unreadable'
+    when 'not_a_store'            then 'Not an online store'
+    when 'excluded_category'      then 'Excluded category (food, digital, services)'
+    when 'category_outside_icp'   then 'Category outside the ICP'
+    when 'size_unknown'           then 'Product count unknown'
+    when 'too_small'              then 'Under 500 products'
+    when 'too_large'              then 'Over 60,000 products'
+    when 'no_nip_on_site'         then 'No NIP on the website'
+    when 'registry_pending'       then 'Registry check pending'
+    when 'seller_not_in_registry' then 'Seller not in the VAT registry'
+    when 'vat_inactive'           then 'Not a VAT payer'
+    else 'Fits the ICP'
+  end                                                              as icp_reason_label
+from public.company_icp i
+left join meta m on m.company_id = i.id;
+
+create function reporting_internal.store_rows()
+returns setof reporting_internal.stores_base
+language sql
+stable
+security definer
+set search_path = ''
+as $$ select * from reporting_internal.stores_base $$;
+
+create view reporting.stores as
+select * from reporting_internal.store_rows();
+
+comment on view reporting.stores is 'One row per company for Looker Studio: platform, category, size band, ICP status and reason, seller type, Meta ads. No domain, name or NIP.';
+
+-- Login role for Looker Studio (Supabase session pooler, user looker_reader.<project ref>).
+-- The password is set outside migrations: alter role looker_reader login password '<SCRAM hash>'.
+create role looker_reader nologin;
+alter role looker_reader set statement_timeout = '30s';
+alter role looker_reader connection limit 5;
+grant usage on schema reporting to looker_reader;
+grant select on all tables in schema reporting to looker_reader;
+alter default privileges in schema reporting grant select on tables to looker_reader;
+revoke all on function reporting_internal.store_rows() from public;
+-- Function calls inside a view are checked against the reader, not the view owner.
+grant execute on function reporting_internal.store_rows() to looker_reader;
 
 -- ---------------------------------------------------------------------------------------------
 -- Row level security: on everywhere, no policies (see the header)
