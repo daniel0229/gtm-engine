@@ -1,7 +1,7 @@
 # ICP config for the GTM Engine demo scenario.
 # The whole system reads this file; changing the scenario = changing this file.
 # docs/icp-odsylka.xlsx is generated from it (icp skill, export_xlsx.py). Edit here, not in Excel.
-version: 2
+version: 3
 
 company:
   name: "Odsyłka"
@@ -96,6 +96,12 @@ signals:
       electronics: 0.5
       beauty: 0.3
       other: 0.2
+  - id: hiring
+    description: "Store's own careers page lists an open role in e-commerce, marketing, customer service or warehouse"
+    why: "A growing team means growing order and return volume; a customer service or warehouse hire is the moment returns hurt most"
+    source: website
+    type: boolean
+    note: "Context for the research card and outbound only, not in scoring: about one store in eight has a careers page on its own domain, so as a component it would mostly score 'unknown'"
   - id: registered_company
     description: "Seller is a company registered in KRS (not a sole trader)"
     why: "A KRS company usually has a team, a budget owner and a buying process; a sole trader rarely buys SaaS for returns"
@@ -476,3 +482,5 @@ changelog:
     change: "Initial version: Odsyłka (fictional returns SaaS), segment, scoring, 3 personas (buying committee), offer, value proposition, sources"
   - date: "2026-11-16"
     change: "Legal form is no longer a filter: sellers without a KRS entry (sole traders, civil partnerships) stay in the segment and only miss the registered_company points (10 of 100). As a filter it dropped the largest group of otherwise fitting stores"
+  - date: "2026-11-19"
+    change: "Added the hiring signal (open roles on the store's own careers page, read by the research agent). Not in scoring, so scores are unchanged from v2"
