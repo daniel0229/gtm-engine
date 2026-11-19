@@ -32,7 +32,7 @@ Every fact in the card is an object:
 |---|---|---|
 | `value` | yes | The fact: string, number or boolean. `null` is not allowed; a missing fact goes to `gaps` instead. |
 | `source_url` | yes | The exact page or API call the fact was read from. Must be on the store's domain (or a subdomain), `wl-api.mf.gov.pl`, `api-krs.ms.gov.pl` or `facebook.com/ads/library`. |
-| `quote` | for `origin: agent` | Up to 30 words copied from the page, in the page's language, or a list of up to 3 such quotes when one fact needs several (a price range, several return channels). The save script checks that every quote appears in the fetched page text; a fact whose quote is not on the page is dropped as unverified. |
+| `quote` | for `origin: agent` | Up to 30 words copied from the page, in the page's language, or a list of up to 3 such quotes when one fact needs several (a price range, several return channels; `product_types` may have up to 6, one menu label per type). The save script checks that every quote appears in the fetched page text; a fact whose quote is not on the page is dropped as unverified. |
 | `evidence` | no | `text` (default) or `code`. Use `code` when the fact is only in the page source, not in the visible text: a returns tool linked from a button (`order.baselinker.com/return/…`), a plugin's config, a Google Form behind a link. The quote is then checked against the raw HTML. |
 | `origin` | yes | `pipeline` = copied from `signals` or `companies` (checked in phase 1), `agent` = found in this research. The evaluation in step 2.4 reports accuracy for both. |
 
@@ -71,7 +71,7 @@ One id from `signals.platform.values` in `config/icp.yaml`, from the page code (
 | Field | Meaning | Origin |
 |---|---|---|
 | `meta_ads_active` | `true` / `false`, plus `active_ads` and `oldest_active_ad_start` | pipeline (Meta Ad Library page of the store) |
-| `hiring` | Open e-commerce or marketing roles on the store's own careers page (step 2.3) | agent, added in step 2.3 |
+| `hiring` | `true` if the store's own careers page lists an open role in e-commerce, marketing, customer service or warehouse; `false` if it lists none or only other roles. `roles` lists every open role as `{title, area}`; `relevant_roles` counts the first four areas. Left out (a gap) when there is no careers page on the store's domain. Also saved to `signals` as type `hiring` | agent (step 2.3) |
 
 ### `returns`
 
